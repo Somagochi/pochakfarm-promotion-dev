@@ -6,7 +6,6 @@
 } from "react";
 import { DotLottieReact } from "@lottiefiles/dotlottie-react";
 import { XIcon } from "lucide-react";
-import { trackEvent } from "../analytics";
 import imgBtnSmall from "../assets/ui/btn-sm.png";
 import imgBtnSmall2 from "../assets/ui/btn-sm-2.png";
 import imgBtnSmall3 from "../assets/ui/btn-sm-3.png";
@@ -90,34 +89,6 @@ type GeneratedCardAssets = {
   cardBackImage: string;
   characterizationId?: string;
 };
-
-function formatApiErrorPayload(payload: unknown) {
-  if (!payload || typeof payload !== "object") {
-    return String(payload ?? "");
-  }
-
-  const record = payload as Record<string, unknown>;
-  const hasStandardErrorShape =
-    "timestamp" in record ||
-    "status" in record ||
-    "code" in record ||
-    "message" in record;
-
-  if (!hasStandardErrorShape) {
-    return JSON.stringify(payload, null, 2);
-  }
-
-  return JSON.stringify(
-    {
-      timestamp: record.timestamp,
-      status: record.status,
-      code: record.code,
-      message: record.message,
-    },
-    null,
-    2,
-  );
-}
 
 function getApiErrorMessage(payload: unknown) {
   if (typeof payload === "string") return payload;
@@ -1093,9 +1064,6 @@ function OnboardingCarousel({
             type="button"
             aria-label={`온보딩 ${index + 1} 보기`}
             onClick={() => {
-              trackEvent("onboarding_slide_selected", {
-                slide_index: index + 1,
-              });
               restartAutoPlay();
               setActiveSlide(index);
             }}
@@ -1406,7 +1374,6 @@ function CardPackPanel({
             <button
               type="button"
               onClick={() => {
-                trackEvent("card_pack_cut_ready");
                 setStage("cut");
               }}
               className="block cursor-pointer focus:outline-none"
@@ -1421,7 +1388,6 @@ function CardPackPanel({
                   onOpen();
                   return;
                 }
-                trackEvent("card_pack_waiting_for_response");
                 setStage("waiting");
               }}
             />
@@ -1476,7 +1442,6 @@ function CuttableCardPack({ onCut }: { onCut: () => void }) {
     if (next >= .88 && !completedRef.current) {
       completedRef.current = true;
       draggingRef.current = false;
-      trackEvent("card_pack_cut_completed");
       window.setTimeout(onCut, 180);
     }
   }, [onCut]);
@@ -1662,7 +1627,6 @@ function PackOpeningOverlay({ characterName, assets, onResult, onRegister }: {
         <CardSkyScene
           cardBackImage={assets.cardBackImage}
           onSelect={(cardIndex) => {
-            trackEvent("card_sky_selected", { card_index: cardIndex + 1 });
             setOpeningScene("result");
             onResult();
           }}
@@ -1821,15 +1785,6 @@ function ResultOverlay({
   const isDragging = useRef(false);
   const dragStartX = useRef(0);
   const dragStartAng = useRef(0);
-  const trackedCardInteractionRef = useRef(false);
-
-  const trackCardInteraction = useCallback((method: "mouse" | "touch") => {
-    if (trackedCardInteractionRef.current) return;
-    trackedCardInteractionRef.current = true;
-    trackEvent("result_card_interacted", {
-      method,
-    });
-  }, []);
 
   useEffect(() => {
     // 0.8s: flip card back → front (0 → 360 so front shows)
@@ -1868,7 +1823,6 @@ function ResultOverlay({
   // Touch swipe handlers
   const onTouchStart = (e: React.TouchEvent) => {
     if (mode !== "spinning") return;
-    trackCardInteraction("touch");
     isDragging.current = true;
     dragStartX.current = e.touches[0].clientX;
     dragStartAng.current = angle;
@@ -1886,7 +1840,6 @@ function ResultOverlay({
   // Mouse drag — global listeners so it works outside the element
   const onMouseDown = (e: React.MouseEvent) => {
     if (mode !== "spinning") return;
-    trackCardInteraction("mouse");
     isDragging.current = true;
     dragStartX.current = e.clientX;
     dragStartAng.current = angle;
@@ -2022,7 +1975,6 @@ function ResultOverlay({
         {onRegister && (
           <PixelButton
             onClick={() => {
-              trackEvent("cta_opened_from_result");
               onRegister();
             }}
             showPaw
@@ -2107,19 +2059,6 @@ function ClassicV2Version() {
   }, [phase]);
 
   useEffect(() => {
-    trackEvent("page_viewed", {
-      is_shared_cta: isSharedCta,
-      is_preview: isPreviewMode,
-    });
-  }, [isPreviewMode, isSharedCta]);
-
-  useEffect(() => {
-    trackEvent("phase_viewed", {
-      phase,
-    });
-  }, [phase]);
-
-  useEffect(() => {
     if (!sharedCharacterizationId) return;
 
     let isCancelled = false;
@@ -2139,9 +2078,6 @@ function ClassicV2Version() {
         if (isCancelled) return;
 
         if (!response.ok) {
-          trackEvent("shared_characterization_load_failed", {
-            message: formatApiErrorPayload(payload),
-          });
           return;
         }
 
@@ -2151,14 +2087,9 @@ function ClassicV2Version() {
           characterizationId:
             assets.characterizationId || sharedCharacterizationId,
         });
-        trackEvent("shared_characterization_loaded");
       } catch (error) {
         if (isCancelled) return;
 
-        trackEvent("shared_characterization_load_failed", {
-          message:
-            error instanceof Error ? error.message : "unknown_error",
-        });
       }
     }
 
@@ -2171,30 +2102,14 @@ function ClassicV2Version() {
 
   const readFile = useCallback(async (file: File) => {
     if (!ACCEPTED_TYPES.has(file.type)) {
-      trackEvent("photo_upload_rejected", {
-        file_type: file.type || "unknown",
-      });
       return;
     }
-    trackEvent("photo_upload_started", {
-      file_type: file.type,
-      file_size_kb: Math.round(file.size / 1024),
-    });
     setGenerationError("");
     setShowGenerationErrorModal(false);
 
     try {
       setUploadedImage(await createUploadPreview(file));
-      trackEvent("photo_upload_completed", {
-        file_type: file.type,
-        file_size_kb: Math.round(file.size / 1024),
-      });
     } catch (error) {
-      trackEvent("photo_upload_failed", {
-        file_type: file.type,
-        message:
-          error instanceof Error ? error.message : "unknown_error",
-      });
       setGenerationError(
         error instanceof Error
           ? error.message
@@ -2205,10 +2120,6 @@ function ClassicV2Version() {
 
   const handleConvert = useCallback(async () => {
     if (!isButtonActive) return;
-    trackEvent("convert_started", {
-      name_length: characterName.trim().length,
-      is_preview: isPreviewMode,
-    });
     setGenerationError("");
     setShowGenerationErrorModal(false);
     setConversionStatus("pending");
@@ -2218,9 +2129,6 @@ function ClassicV2Version() {
     if (isPreviewMode) {
       setGeneratedAssets(FALLBACK_CARD_ASSETS);
       setConversionStatus("success");
-      trackEvent("convert_completed", {
-        mode: "preview",
-      });
       return;
     }
 
@@ -2247,9 +2155,6 @@ function ClassicV2Version() {
       }
       if (!response.ok) {
         const apiErrorMessage = getApiErrorMessage(payload);
-        trackEvent("convert_failed", {
-          message: apiErrorMessage,
-        });
         setGenerationError(apiErrorMessage);
         setShowGenerationErrorModal(true);
         setConversionStatus("error");
@@ -2258,14 +2163,7 @@ function ClassicV2Version() {
       }
       setGeneratedAssets(getGeneratedCardAssets(payload));
       setConversionStatus("success");
-      trackEvent("convert_completed", {
-        mode: "api",
-      });
     } catch (error) {
-      trackEvent("convert_failed", {
-        message:
-          error instanceof Error ? error.message : "unknown_error",
-      });
       setGenerationError(
         error instanceof Error
           ? error.message
@@ -2279,11 +2177,9 @@ function ClassicV2Version() {
 
   const handleOpenPack = useCallback(() => {
     if (conversionStatus !== "success") return;
-    trackEvent("card_pack_opened");
     setPhase("dim");
   }, [conversionStatus]);
   const handleResult = useCallback(() => {
-    trackEvent("result_viewed");
     setPhase("result");
   }, []);
 
@@ -2449,7 +2345,6 @@ function ClassicV2Version() {
                 accept="image/jpeg,image/png,image/webp"
                 onChange={(e) => {
                   if (e.target.files?.[0]) {
-                    trackEvent("photo_selected");
                     readFile(e.target.files[0]);
                   }
                 }}
@@ -2474,14 +2369,10 @@ function ClassicV2Version() {
                   e.preventDefault();
                   setIsDragging(false);
                   if (e.dataTransfer.files[0]) {
-                    trackEvent("photo_dropped");
                     readFile(e.dataTransfer.files[0]);
                   }
                 }}
                 onClick={() => {
-                  trackEvent("photo_picker_opened", {
-                    has_existing_photo: !!uploadedImage,
-                  });
                   fileInputRef.current?.click();
                 }}
               >
@@ -2647,11 +2538,6 @@ function ClassicV2Version() {
             rel={link.href.startsWith("mailto:") ? undefined : "noopener noreferrer"}
             aria-label={link.label}
             className={`absolute cursor-pointer ${link.className}`}
-            onClick={() => {
-              trackEvent("intro_footer_link_clicked", {
-                target: link.target,
-              });
-            }}
           />
         ))}
       </footer>
@@ -2829,14 +2715,9 @@ function EarlyRegistrationDialog({
     import.meta.env.DEV ||
     new URLSearchParams(window.location.search).get("preview") === "1";
 
-  useEffect(() => {
-    trackEvent("registration_dialog_viewed");
-  }, []);
-
   const handleSubmit = useCallback(async () => {
     if (!canSubmit || isSubmitting) return;
 
-    trackEvent("registration_submit_clicked");
     setRegistrationError("");
     setIsSubmitting(true);
 
@@ -2936,9 +2817,6 @@ function EarlyRegistrationDialog({
       className="fixed inset-0 z-[210] flex items-center justify-center bg-black/70 px-4"
       onClick={(event) => {
         if (event.target === event.currentTarget) {
-          trackEvent("registration_dialog_closed", {
-            method: "backdrop",
-          });
           onClose();
         }
       }}
@@ -2954,9 +2832,6 @@ function EarlyRegistrationDialog({
           <button
             type="button"
             onClick={() => {
-              trackEvent("registration_dialog_closed", {
-                method: "button",
-              });
               onClose();
             }}
             className="absolute right-[-30px] top-[-20px] flex h-8 w-8 items-center justify-center text-[28px] leading-none text-[#b7ad9a]"
@@ -3225,20 +3100,8 @@ function CTAPage({
   const [showToast, setShowToast] = useState(false);
   const [showHomeConfirm, setShowHomeConfirm] = useState(false);
 
-  useEffect(() => {
-    trackEvent("cta_page_viewed", {
-      has_character_name: !!characterName,
-      has_card_image: !!cardImage,
-      has_card_back_image: !!cardBackImage,
-      has_characterization_id: !!characterizationId,
-      is_shared_entry: isSharedEntry,
-    });
-  }, [cardBackImage, cardImage, characterName, characterizationId, isSharedEntry]);
-
   const handleShare = async () => {
-    trackEvent("cta_share_clicked");
     if (await copyShareLink(createCtaShareLink(characterizationId))) {
-      trackEvent("cta_share_copied");
       setShowToast(true);
     }
   };
@@ -3389,7 +3252,6 @@ function CTAPage({
                 onClick={
                   isSharedEntry
                     ? () => {
-                        trackEvent("shared_cta_create_clicked");
                         onCreateNew();
                       }
                     : handleShare
@@ -3406,7 +3268,6 @@ function CTAPage({
               <button
                 type="button"
                 onClick={() => {
-                  trackEvent("cta_home_clicked");
                   setShowHomeConfirm(true);
                 }}
                 className="mt-[3px] cursor-pointer text-[11px] tracking-[0.35px] text-[#6a6a61] transition-colors hover:text-[#32322d] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#628d38]/60"
@@ -3442,11 +3303,6 @@ function CTAPage({
             rel={link.href.startsWith("mailto:") ? undefined : "noopener noreferrer"}
             aria-label={link.label}
             className={`absolute cursor-pointer ${link.className}`}
-            onClick={() => {
-              trackEvent("cta_footer_link_clicked", {
-                target: link.target,
-              });
-            }}
           />
         ))}
       </footer>
@@ -3460,7 +3316,6 @@ function CTAPage({
           characterizationId={characterizationId}
           onClose={() => setShowDialog(false)}
           onComplete={() => {
-            trackEvent("cta_registration_completed");
             setShowDialog(false);
             onComplete();
           }}
@@ -3470,7 +3325,6 @@ function CTAPage({
         <HomeConfirmDialog
           onClose={() => setShowHomeConfirm(false)}
           onConfirm={() => {
-            trackEvent("cta_home_confirmed");
             setShowHomeConfirm(false);
             onCreateNew();
           }}
@@ -3492,14 +3346,8 @@ function CompletePage({
   shareUrl: string;
 }) {
   const [showToast, setShowToast] = useState(false);
-  useEffect(() => {
-    trackEvent("registration_complete_page_viewed");
-  }, []);
-
   const handleShare = async () => {
-    trackEvent("registration_complete_share_clicked");
     if (await copyShareLink(shareUrl)) {
-      trackEvent("registration_complete_share_copied");
       setShowToast(true);
     }
   };
